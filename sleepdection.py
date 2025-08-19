@@ -278,6 +278,10 @@ def main():
         initial_sidebar_state="expanded"
     )
 
+    # Initialize session state FIRST - before any other components
+    if 'detector' not in st.session_state:
+        st.session_state.detector = DrowsinessDetector()
+
     # Custom CSS
     st.markdown("""
     <style>
@@ -334,10 +338,6 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # Initialize session state
-    if 'detector' not in st.session_state:
-        st.session_state.detector = DrowsinessDetector()
-
     # Sidebar controls
     with st.sidebar:
         st.markdown("### ⚙️ Control Panel")
@@ -366,9 +366,16 @@ def main():
         st.markdown("### 📹 Live Video Stream")
         
         # WebRTC streamer (works in Streamlit Cloud)
+        # Create a factory function that safely returns the detector
+        def get_detector():
+            if 'detector' in st.session_state:
+                return st.session_state.detector
+            else:
+                return DrowsinessDetector()
+        
         webrtc_ctx = webrtc_streamer(
             key="driver-safety",
-            video_processor_factory=lambda: st.session_state.detector,
+            video_processor_factory=get_detector,
             rtc_configuration=RTCConfiguration(
                 {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
             ),
