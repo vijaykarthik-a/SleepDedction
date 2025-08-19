@@ -2,7 +2,7 @@ import streamlit as st
 import cv2
 import numpy as np
 import av
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, ClientSettings
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 import threading
 import queue
 import time
@@ -21,7 +21,7 @@ def load_detectors():
         return None, None
 
 
-class DrowsinessDetector(VideoTransformerBase):
+class DrowsinessDetector(VideoProcessorBase):
     def __init__(self):
         self.EYE_AR_THRESH = 0.25
         self.EYE_AR_CONSEC_FRAMES = 20
@@ -166,7 +166,7 @@ class DrowsinessDetector(VideoTransformerBase):
         
         return mobile_detected
 
-    def transform(self, frame):
+    def recv(self, frame):
         """Main processing function for each video frame"""
         img = frame.to_ndarray(format="bgr24")
         self.frame_count += 1
@@ -368,22 +368,22 @@ def main():
         # WebRTC streamer (works in Streamlit Cloud)
         webrtc_ctx = webrtc_streamer(
             key="driver-safety",
-            video_transformer_factory=lambda: st.session_state.detector,
-            client_settings=ClientSettings(
-                rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-                media_stream_constraints={"video": True, "audio": False},
+            video_processor_factory=lambda: st.session_state.detector,
+            rtc_configuration=RTCConfiguration(
+                {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
             ),
+            media_stream_constraints={"video": True, "audio": False},
             async_processing=True,
         )
 
     with col2:
         st.markdown("### 📈 Live Dashboard")
         
-        if webrtc_ctx.video_transformer:
-            transformer = webrtc_ctx.video_transformer
+        if webrtc_ctx.video_processor:
+            processor = webrtc_ctx.video_processor
             
             # Status cards
-            if transformer.ALARM_ON:
+            if processor.ALARM_ON:
                 st.markdown('''
                 <div class="alert-card">
                     <h3>😴 DROWSINESS ALERT!</h3>
@@ -397,7 +397,7 @@ def main():
                 </div>
                 ''', unsafe_allow_html=True)
             
-            if transformer.MOBILE_ALERT:
+            if processor.MOBILE_ALERT:
                 st.markdown('''
                 <div class="alert-card">
                     <h3>📱 MOBILE DETECTED!</h3>
@@ -411,8 +411,8 @@ def main():
                 st.markdown(f'''
                 <div class="metric-card">
                     <h4>Live EAR</h4>
-                    <h2>{transformer.current_ear:.3f}</h2>
-                    <small>Threshold: {transformer.EYE_AR_THRESH:.2f}</small>
+                    <h2>{processor.current_ear:.3f}</h2>
+                    <small>Threshold: {processor.EYE_AR_THRESH:.2f}</small>
                 </div>
                 ''', unsafe_allow_html=True)
 
@@ -420,7 +420,7 @@ def main():
                 st.markdown(f'''
                 <div class="metric-card">
                     <h4>Eyes Found</h4>
-                    <h2>{transformer.eyes_detected}</h2>
+                    <h2>{processor.eyes_detected}</h2>
                 </div>
                 ''', unsafe_allow_html=True)
             
@@ -429,8 +429,8 @@ def main():
                 st.markdown(f'''
                 <div class="metric-card">
                     <h4>Drowsy Frames</h4>
-                    <h2>{transformer.COUNTER}</h2>
-                    <small>Max: {transformer.EYE_AR_CONSEC_FRAMES}</small>
+                    <h2>{processor.COUNTER}</h2>
+                    <small>Max: {processor.EYE_AR_CONSEC_FRAMES}</small>
                 </div>
                 ''', unsafe_allow_html=True)
 
@@ -438,8 +438,8 @@ def main():
                 st.markdown(f'''
                 <div class="metric-card">
                     <h4>Mobile Count</h4>
-                    <h2>{transformer.MOBILE_COUNTER}</h2>
-                    <small>Threshold: {transformer.MOBILE_THRESH}</small>
+                    <h2>{processor.MOBILE_COUNTER}</h2>
+                    <small>Threshold: {processor.MOBILE_THRESH}</small>
                 </div>
                 ''', unsafe_allow_html=True)
         else:
