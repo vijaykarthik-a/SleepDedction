@@ -6,3 +6,6 @@ tensorflow
 pygame
 scipy
 streamlit-webrtc
+opencv-python-headless
+aiortc
+av
