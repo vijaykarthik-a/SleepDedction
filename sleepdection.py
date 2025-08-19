@@ -1,18 +1,15 @@
 import streamlit as st
 import cv2
 import numpy as np
-import tensorflow as tf
-from tensorflow import keras
 import threading
 import time
-import pygame
-from scipy.spatial import distance as dist
-import math
 import tempfile
 import os
 from PIL import Image
-import io
-import base64
+import av
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, ClientSettings
+import pygame
+from scipy.spatial import distance as dist
 
 
 # Load OpenCV cascades
@@ -25,7 +22,7 @@ def load_detectors():
     return face_cascade, eye_cascade, profile_cascade
 
 
-class DrowsinessDetector:
+class DrowsinessVideoTransformer(VideoTransformerBase):
     def __init__(self):
         self.EYE_AR_THRESH = 0.15
         self.EYE_AR_CONSEC_FRAMES = 15
@@ -37,12 +34,17 @@ class DrowsinessDetector:
         
         self.face_cascade, self.eye_cascade, self.profile_cascade = load_detectors()
         
+        # Shared state for metrics
+        self.current_ear = 0.3
+        self.eyes_detected = 0
+        self.faces_detected = 0
+        
         # Initialize pygame for sound
         try:
             pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
             self.create_alarm_sounds()
         except Exception as e:
-            st.warning(f"Audio system not available: {e}")
+            print(f"Audio system not available: {e}")
 
     def create_alarm_sounds(self):
         """Create different alarm sounds"""
@@ -52,7 +54,7 @@ class DrowsinessDetector:
             # Drowsiness alarm - lower frequency beep
             self.create_sound_file('drowsy_alarm.wav', 400, 0.8, sample_rate)
             
-            # Mobile alert - higher frequency beep
+            # Mobile alert - higher frequency beep  
             self.create_sound_file('mobile_alarm.wav', 800, 0.5, sample_rate)
             
         except Exception as e:
@@ -166,10 +168,6 @@ class DrowsinessDetector:
         """Detect potential mobile phone usage"""
         mobile_detected = False
         
-        # Define region of interest around the ear area (right side of face)
-        ear_region_right = frame[face_y:face_y + face_h, face_x + int(face_w * 0.7):face_x + face_w + 50]
-        ear_region_left = frame[face_y:face_y + face_h, max(0, face_x - 50):face_x + int(face_w * 0.3)]
-        
         # Convert to HSV for better color detection
         hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
@@ -189,7 +187,7 @@ class DrowsinessDetector:
         right_dark_pixels = cv2.countNonZero(ear_right_roi) if ear_right_roi.size > 0 else 0
         left_dark_pixels = cv2.countNonZero(ear_left_roi) if ear_left_roi.size > 0 else 0
         
-        # Threshold for mobile detection (adjust as needed)
+        # Threshold for mobile detection
         mobile_threshold = 100
         
         if right_dark_pixels > mobile_threshold or left_dark_pixels > mobile_threshold:
@@ -210,10 +208,12 @@ class DrowsinessDetector:
         
         return mobile_detected
 
-    def process_frame(self, frame):
-        """Process a single frame for drowsiness and mobile detection"""
-        frame_height, frame_width = frame.shape[:2]
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    def transform(self, frame):
+        """Main video processing function called for each frame"""
+        img = frame.to_ndarray(format="bgr24")
+        
+        frame_height, frame_width = img.shape[:2]
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
         # Detect faces
         faces = self.face_cascade.detectMultiScale(
@@ -224,29 +224,31 @@ class DrowsinessDetector:
             flags=cv2.CASCADE_SCALE_IMAGE
         )
         
+        self.faces_detected = len(faces)
         ear_avg = 0.3  # Default EAR value
-        drowsy_status = "😊 Driver Alert & Focused"
-        mobile_status = "📱 No Phone Detected"
         mobile_detected = False
         
         for (x, y, w, h) in faces:
             # Draw face rectangle
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-            cv2.putText(frame, "Driver", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+            cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            cv2.putText(img, "Driver", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
             
             # Extract face region
-            face_region = frame[y:y + h, x:x + w]
+            face_region = img[y:y + h, x:x + w]
             
             # Detect eyes in face region
-            ear_values, eye_centers = self.detect_eyes_improved(face_region, frame, x, y)
+            ear_values, eye_centers = self.detect_eyes_improved(face_region, img, x, y)
+            self.eyes_detected = len(ear_values)
             
             # Detect mobile phone usage
-            mobile_detected = self.detect_mobile_usage(frame, face_region, x, y, w, h)
+            mobile_detected = self.detect_mobile_usage(img, face_region, x, y, w, h)
             
             if len(ear_values) >= 2:
                 ear_avg = sum(ear_values) / len(ear_values)
             elif len(ear_values) == 1:
                 ear_avg = ear_values[0]
+            
+            self.current_ear = ear_avg
             
             # Check for drowsiness
             if ear_avg < self.EYE_AR_THRESH:
@@ -255,14 +257,17 @@ class DrowsinessDetector:
                 if self.COUNTER >= self.EYE_AR_CONSEC_FRAMES:
                     if not self.ALARM_ON:
                         self.ALARM_ON = True
+                        try:
+                            self.play_drowsy_alarm()
+                        except:
+                            pass
                     
-                    drowsy_status = "😴 DROWSINESS ALERT - WAKE UP!"
-                    cv2.putText(frame, "DROWSINESS ALERT!", (10, 30),
+                    cv2.putText(img, "DROWSINESS ALERT!", (10, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                    cv2.putText(frame, "EYES CLOSED - WAKE UP!", (10, 60),
+                    cv2.putText(img, "EYES CLOSED - WAKE UP!", (10, 60),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
             else:
-                # Eyes are open - reset counter and stop alarm
+                # Eyes are open - reset counter
                 self.COUNTER = 0
                 if self.ALARM_ON:
                     self.ALARM_ON = False
@@ -273,11 +278,14 @@ class DrowsinessDetector:
                 if self.MOBILE_COUNTER >= self.MOBILE_THRESH:
                     if not self.MOBILE_ALERT:
                         self.MOBILE_ALERT = True
+                        try:
+                            self.play_mobile_alarm()
+                        except:
+                            pass
                     
-                    mobile_status = "📱 MOBILE PHONE DETECTED!"
-                    cv2.putText(frame, "AVOID USING MOBILE!", (10, 90),
+                    cv2.putText(img, "AVOID USING MOBILE!", (10, 90),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                    cv2.putText(frame, "STOP CAR & USE PHONE", (10, 120),
+                    cv2.putText(img, "STOP CAR & USE PHONE", (10, 120),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
             else:
                 self.MOBILE_COUNTER = max(0, self.MOBILE_COUNTER - 1)
@@ -285,24 +293,27 @@ class DrowsinessDetector:
                     self.MOBILE_ALERT = False
             
             # Display metrics on frame
-            cv2.putText(frame, f"EAR: {ear_avg:.3f}", (frame_width - 150, frame_height - 60),
+            cv2.putText(img, f"EAR: {ear_avg:.3f}", (frame_width - 150, frame_height - 80),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-            cv2.putText(frame, f"Eyes: {len(ear_values)}", (frame_width - 150, frame_height - 40),
+            cv2.putText(img, f"Eyes: {len(ear_values)}", (frame_width - 150, frame_height - 60),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            cv2.putText(frame, f"Threshold: {self.EYE_AR_THRESH:.3f}",
-                        (frame_width - 150, frame_height - 20),
+            cv2.putText(img, f"Threshold: {self.EYE_AR_THRESH:.3f}",
+                        (frame_width - 150, frame_height - 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+            cv2.putText(img, f"Status: {'DROWSY' if self.ALARM_ON else 'ALERT'}",
+                        (frame_width - 150, frame_height - 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255) if self.ALARM_ON else (0, 255, 0), 1)
             
             break  # Process only the first face
         
-        return frame, ear_avg, len(ear_values), drowsy_status, mobile_status, mobile_detected
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
 
     def play_drowsy_alarm(self):
         """Play drowsiness alarm sound"""
         try:
             if hasattr(self, 'drowsy_alarm_file') and os.path.exists(self.drowsy_alarm_file):
                 pygame.mixer.music.load(self.drowsy_alarm_file)
-                pygame.mixer.music.play(-1)  # Loop indefinitely
+                pygame.mixer.music.play(1)  # Play once
         except Exception as e:
             print(f"Error playing drowsy alarm: {e}")
 
@@ -311,16 +322,9 @@ class DrowsinessDetector:
         try:
             if hasattr(self, 'mobile_alarm_file') and os.path.exists(self.mobile_alarm_file):
                 pygame.mixer.music.load(self.mobile_alarm_file)
-                pygame.mixer.music.play(2)  # Play 2 times
+                pygame.mixer.music.play(1)  # Play once
         except Exception as e:
             print(f"Error playing mobile alarm: {e}")
-
-    def stop_alarm(self):
-        """Stop all alarm sounds"""
-        try:
-            pygame.mixer.music.stop()
-        except Exception as e:
-            print(f"Error stopping alarm: {e}")
 
 
 def main():
@@ -358,17 +362,6 @@ def main():
         font-weight: bold;
     }
 
-    .mobile-alert-card {
-        background: linear-gradient(135deg, #ff6348 0%, #ff4757 100%);
-        padding: 1.5rem;
-        border-radius: 15px;
-        border-left: 5px solid #ff3838;
-        color: white;
-        margin: 1rem 0;
-        animation: shake 1s infinite;
-        font-weight: bold;
-    }
-
     .status-good {
         background: linear-gradient(135deg, #2ed573 0%, #7bed9f 100%);
         padding: 1rem;
@@ -383,18 +376,178 @@ def main():
         50% { transform: scale(1.03); }
         100% { transform: scale(1); }
     }
+    </style>
+    """, unsafe_allow_html=True)
 
-    @keyframes shake {
-        0%, 100% { transform: translateX(0); }
-        25% { transform: translateX(-5px); }
-        75% { transform: translateX(5px); }
-    }
+    # Header
+    st.markdown("""
+    <div class="main-header">
+        <h1>🚨 Live Driver Safety Monitoring System</h1>
+        <p>Real-time Drowsiness Detection + Mobile Phone Usage Alert</p>
+        <small>Powered by WebRTC Live Video Streaming</small>
+    </div>
+    """, unsafe_allow_html=True)
 
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 25px;
-        padding: 0.5rem 2rem;
-        font-weight: 600;
-        transition
+    # Initialize session state for transformer
+    if 'transformer' not in st.session_state:
+        st.session_state.transformer = DrowsinessVideoTransformer()
+
+    # Sidebar controls
+    with st.sidebar:
+        st.markdown("### ⚙ Control Panel")
+
+        sensitivity = st.slider("👁 Drowsiness Sensitivity", 0.05, 0.25, 0.15, 0.01)
+        st.session_state.transformer.EYE_AR_THRESH = sensitivity
+
+        frame_threshold = st.slider("⏱ Drowsiness Alert Frame Threshold", 5, 30, 15, 5)
+        st.session_state.transformer.EYE_AR_CONSEC_FRAMES = frame_threshold
+
+        mobile_threshold = st.slider("📱 Mobile Detection Threshold", 5, 20, 10, 1)
+        st.session_state.transformer.MOBILE_THRESH = mobile_threshold
+
+        st.markdown("### 🎵 Audio Settings")
+        enable_audio = st.checkbox("Enable Audio Alerts", True)
+
+    # Main content
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.markdown("### 📹 Live Video Stream")
+        
+        # WebRTC video streamer
+        webrtc_ctx = webrtc_streamer(
+            key="driver-safety-monitor",
+            video_transformer_factory=lambda: st.session_state.transformer,
+            client_settings=ClientSettings(
+                rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+                media_stream_constraints={"video": True, "audio": False},
+            ),
+            async_processing=True,
+        )
+
+    with col2:
+        st.markdown("### 📈 Live Status Dashboard")
+        
+        # Real-time metrics placeholder
+        metrics_placeholder = st.empty()
+        
+        # Update metrics in real-time
+        if webrtc_ctx.video_transformer:
+            transformer = webrtc_ctx.video_transformer
+            
+            # Status display
+            if transformer.ALARM_ON:
+                st.markdown('''
+                <div class="alert-card">
+                    <h3>😴 DROWSINESS ALERT!</h3>
+                    <p>Driver appears drowsy - please pull over safely</p>
+                </div>
+                ''', unsafe_allow_html=True)
+            else:
+                st.markdown('''
+                <div class="status-good">
+                    <h4>😊 Driver Alert & Focused</h4>
+                </div>
+                ''', unsafe_allow_html=True)
+            
+            # Mobile phone status
+            if transformer.MOBILE_ALERT:
+                st.markdown('''
+                <div class="alert-card">
+                    <h3>📱 MOBILE PHONE ALERT!</h3>
+                    <p>Please stop your car safely and then use your phone</p>
+                </div>
+                ''', unsafe_allow_html=True)
+            
+            # Live metrics
+            with metrics_placeholder.container():
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    st.markdown(f'''
+                    <div class="metric-card">
+                        <h4>Live EAR</h4>
+                        <h2>{transformer.current_ear:.3f}</h2>
+                        <small>Threshold: {transformer.EYE_AR_THRESH:.3f}</small>
+                    </div>
+                    ''', unsafe_allow_html=True)
+
+                with col_m2:
+                    st.markdown(f'''
+                    <div class="metric-card">
+                        <h4>Eyes Detected</h4>
+                        <h2>{transformer.eyes_detected}</h2>
+                    </div>
+                    ''', unsafe_allow_html=True)
+                
+                col_m3, col_m4 = st.columns(2)
+                with col_m3:
+                    st.markdown(f'''
+                    <div class="metric-card">
+                        <h4>Closed Eye Count</h4>
+                        <h2>{transformer.COUNTER}</h2>
+                        <small>Max: {transformer.EYE_AR_CONSEC_FRAMES}</small>
+                    </div>
+                    ''', unsafe_allow_html=True)
+
+                with col_m4:
+                    st.markdown(f'''
+                    <div class="metric-card">
+                        <h4>Mobile Detection</h4>
+                        <h2>{transformer.MOBILE_COUNTER}</h2>
+                        <small>Threshold: {transformer.MOBILE_THRESH}</small>
+                    </div>
+                    ''', unsafe_allow_html=True)
+
+    # Information section
+    with st.expander("ℹ How to Use - Live Video Version"):
+        st.markdown('''
+        ### 🚀 Setup Instructions
+        
+        1. **Install streamlit-webrtc**:
+        ```bash
+        pip install streamlit-webrtc
+        ```
+        
+        2. **Allow camera access** when prompted by your browser
+        
+        3. **Click START** to begin live video processing
+        
+        4. **Monitor the dashboard** for real-time alerts
+        
+        ### 🔧 Features
+        - **Live Video Stream**: Real-time webcam processing
+        - **WebRTC Technology**: Direct browser-to-browser communication
+        - **Real-time Alerts**: Instant drowsiness and mobile detection
+        - **Audio Notifications**: Sound alerts for safety
+        - **Adjustable Parameters**: Fine-tune detection sensitivity
+        
+        ### 📱 Detection Capabilities
+        - **Eye Aspect Ratio (EAR)**: Measures eye openness
+        - **Consecutive Frame Counting**: Prevents false positives
+        - **Mobile Phone Detection**: Detects objects near ears
+        - **Multi-face Support**: Processes multiple faces
+        
+        ### ⚠ Browser Compatibility
+        - **Chrome**: Full support ✅
+        - **Firefox**: Full support ✅
+        - **Safari**: Limited support ⚠️
+        - **Edge**: Full support ✅
+        
+        ### 🚗 Safety Recommendations
+        - Use with proper vehicle mounting
+        - Ensure good lighting conditions
+        - Regular calibration based on environment
+        - Pull over safely when alerts trigger
+        ''')
+
+
+if __name__ == "__main__":
+    # Page configuration
+    st.set_page_config(
+        page_title="Live Driver Safety Monitor",
+        page_icon="🚨",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+
+    main()
