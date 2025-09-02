@@ -619,9 +619,182 @@ class EnhancedDrowsinessDetector(VideoProcessorBase):
 def main():
     # Page configuration
     st.set_page_config(
-        page_title="🚨",
+        page_title="🚨 Driver Drowsiness & Mobile Phone Detection",
+        page_icon="🚨",
         layout="wide",
         initial_sidebar_state="expanded"
     )
+    
+    # Header
+    st.title("🚨 Driver Drowsiness & Mobile Phone Detection System")
+    st.markdown("**Advanced AI-powered safety monitoring for drivers**")
+    
+    # Sidebar configuration
+    st.sidebar.header("🔧 Configuration")
+    
+    # Detection parameters
+    st.sidebar.subheader("Detection Parameters")
+    ear_threshold = st.sidebar.slider(
+        "Eye Aspect Ratio Threshold", 
+        min_value=0.15, 
+        max_value=0.35, 
+        value=0.25, 
+        step=0.01,
+        help="Lower values = more sensitive to eye closure"
+    )
+    
+    consecutive_frames = st.sidebar.slider(
+        "Consecutive Frames for Alert", 
+        min_value=5, 
+        max_value=30, 
+        value=15,
+        help="Number of consecutive frames with closed eyes before alert"
+    )
+    
+    mobile_threshold = st.sidebar.slider(
+        "Mobile Detection Sensitivity", 
+        min_value=5, 
+        max_value=20, 
+        value=10,
+        help="Frames to confirm mobile phone detection"
+    )
+    
+    # Advanced settings
+    with st.sidebar.expander("🔬 Advanced Settings"):
+        face_confidence = st.slider(
+            "Face Detection Confidence", 
+            min_value=0.5, 
+            max_value=0.9, 
+            value=0.7
+        )
+        
+        detection_method = st.selectbox(
+            "Primary Detection Method",
+            ["Auto (MediaPipe + OpenCV)", "MediaPipe Only", "OpenCV Only"]
+        )
+        
+        smoothing_enabled = st.checkbox("Enable EAR Smoothing", value=True)
+    
+    # Create columns for layout
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("📹 Live Video Feed")
+        
+        # WebRTC configuration
+        rtc_configuration = RTCConfiguration({
+            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+        })
+        
+        # Initialize video processor
+        detector = EnhancedDrowsinessDetector()
+        detector.EYE_AR_THRESH = ear_threshold
+        detector.EYE_AR_CONSEC_FRAMES = consecutive_frames
+        detector.MOBILE_THRESH = mobile_threshold
+        detector.FACE_CONFIDENCE_THRESH = face_confidence
+        
+        # Start video stream
+        webrtc_ctx = webrtc_streamer(
+            key="drowsiness-detector",
+            video_processor_factory=lambda: detector,
+            rtc_configuration=rtc_configuration,
+            media_stream_constraints={
+                "video": {
+                    "width": {"ideal": 640},
+                    "height": {"ideal": 480},
+                    "frameRate": {"ideal": 30}
+                },
+                "audio": False
+            },
+            async_processing=True,
+        )
+    
+    with col2:
+        st.subheader("📊 Real-time Metrics")
+        
+        # Create placeholders for metrics
+        status_placeholder = st.empty()
+        metrics_placeholder = st.empty()
+        alert_placeholder = st.empty()
+        
+        # Instructions
+        st.subheader("📋 Instructions")
+        st.markdown("""
+        **How to use:**
+        1. Click 'Start' to begin video monitoring
+        2. Position your face in the camera view
+        3. The system will monitor:
+           - Eye closure (drowsiness)
+           - Mobile phone usage
+        
+        **Alert Conditions:**
+        - 🔴 **Drowsiness**: Eyes closed for extended period
+        - 📱 **Mobile Phone**: Dark object detected near ear
+        
+        **Tips for best results:**
+        - Ensure good lighting
+        - Keep face centered in frame
+        - Avoid wearing dark glasses
+        """)
+        
+        # Real-time updates when video is active
+        if webrtc_ctx.video_processor:
+            processor = webrtc_ctx.video_processor
+            
+            # Update metrics in real-time
+            with metrics_placeholder.container():
+                col_a, col_b = st.columns(2)
+                
+                with col_a:
+                    st.metric("👁️ Current EAR", f"{processor.current_ear:.3f}")
+                    st.metric("👤 Faces Detected", processor.faces_detected)
+                    st.metric("🔍 Detection Method", processor.detection_method)
+                
+                with col_b:
+                    st.metric("👀 Eyes Detected", processor.eyes_detected)
+                    st.metric("📊 Face Confidence", f"{processor.face_confidence:.1%}")
+                    st.metric("🎬 Frame Count", processor.frame_count)
+            
+            # Status indicators
+            with status_placeholder.container():
+                if processor.ALARM_ON:
+                    st.error("🚨 **DROWSINESS DETECTED** - Driver appears to be falling asleep!")
+                elif processor.current_ear < ear_threshold * 1.2:
+                    st.warning("⚠️ **CAUTION** - Eyes are getting heavy")
+                else:
+                    st.success("✅ **ALERT** - Driver is awake and attentive")
+            
+            # Mobile phone alert
+            with alert_placeholder.container():
+                if processor.MOBILE_ALERT:
+                    st.error("📱 **MOBILE PHONE DETECTED** - Please stop the car safely!")
+                elif processor.MOBILE_COUNTER > 0:
+                    st.warning(f"📱 Checking for mobile phone... ({processor.MOBILE_COUNTER}/{processor.MOBILE_THRESH})")
+    
+    # Footer information
+    st.markdown("---")
+    st.markdown("""
+    **🛡️ Safety Notice**: This system is designed to assist drivers but should not replace proper rest and safe driving practices. 
+    Always pull over safely if you feel drowsy.
+    """)
+    
+    # Technical information
+    with st.expander("🔧 Technical Details"):
+        st.markdown("""
+        **Detection Technologies:**
+        - **MediaPipe**: Advanced facial landmark detection for precise eye tracking
+        - **OpenCV**: Robust face and eye detection with Haar cascades
+        - **EAR (Eye Aspect Ratio)**: Mathematical model for measuring eye openness
+        - **Multi-modal Detection**: Combines multiple algorithms for improved accuracy
+        
+        **Features:**
+        - Real-time face tracking with confidence scoring
+        - Adaptive thresholding for varying lighting conditions
+        - Temporal smoothing to reduce false positives
+        - Mobile phone detection using color space analysis
+        - Comprehensive alerting system with visual indicators
+        """)
 
+
+if __name__ == "__main__":
     main()
