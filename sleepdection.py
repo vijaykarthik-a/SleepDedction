@@ -619,4 +619,8 @@ class EnhancedDrowsinessDetector(VideoProcessorBase):
 def main():
     # Page configuration
     st.set_page_config(
-        page_title="🚨
+        page_title="🚨layout="wide",
+        initial_sidebar_state="expanded"
+    )
+
+    main()
