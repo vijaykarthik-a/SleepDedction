@@ -663,23 +663,16 @@ def process_uploaded_image(uploaded_file):
         return None, None
 
 
-# Enhanced WebRTC Configuration
+# Simplified WebRTC Configuration - this fixes the start button issue
 RTC_CONFIGURATION = RTCConfiguration({
-    "iceServers": [
-        {"urls": ["stun:stun.l.google.com:19302"]},
-        {"urls": ["stun:stun1.l.google.com:19302"]},
-        {"urls": ["stun:stun2.l.google.com:19302"]},
-        {"urls": ["stun:stun3.l.google.com:19302"]},
-        {"urls": ["stun:stun4.l.google.com:19302"]},
-    ],
-    "iceCandidatePoolSize": 10
+    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
 })
 
 
 def main():
-    """Main application with comprehensive driver monitoring"""
+    """Main application with simplified camera setup"""
     st.set_page_config(
-        page_title="Enhanced Driver Monitoring System",
+        page_title="Driver Monitoring System",
         page_icon="🚗",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -733,16 +726,16 @@ def main():
     # Header
     st.markdown("""
     <div class="main-header">
-        <h1>🚗 Enhanced Driver Monitoring System</h1>
+        <h1>🚗 Driver Monitoring System</h1>
         <p>AI-powered driver safety monitoring with drowsiness and phone usage detection</p>
     </div>
     """, unsafe_allow_html=True)
     
     # Sidebar configuration
-    st.sidebar.title("Configuration")
+    st.sidebar.title("Settings")
     
     # Detection settings
-    st.sidebar.subheader("Detection Settings")
+    st.sidebar.subheader("Detection Thresholds")
     
     ear_threshold = st.sidebar.slider(
         "Eye Aspect Ratio Threshold",
@@ -754,11 +747,11 @@ def main():
     )
     
     drowsy_frames = st.sidebar.slider(
-        "Drowsiness Detection Frames",
+        "Drowsiness Alert Frames",
         min_value=5,
         max_value=30,
         value=15,
-        help="Number of consecutive frames needed to trigger drowsiness alert"
+        help="Consecutive frames needed to trigger alert"
     )
     
     phone_threshold = st.sidebar.slider(
@@ -767,129 +760,101 @@ def main():
         max_value=0.8,
         value=0.6,
         step=0.05,
-        help="Confidence threshold for phone usage detection"
+        help="Confidence threshold for phone detection"
     )
     
     # System status
     st.sidebar.subheader("System Status")
-    
-    opencv_status = "✅ Available" if cv2 is not None else "❌ Not Available"
-    mediapipe_status = "✅ Available" if MEDIAPIPE_AVAILABLE else "❌ Not Available"
+    opencv_status = "✅ Ready" if cv2 is not None else "❌ Error"
+    mediapipe_status = "✅ Ready" if MEDIAPIPE_AVAILABLE else "❌ Not Available"
     
     st.sidebar.markdown(f"""
     **OpenCV:** {opencv_status}  
     **MediaPipe:** {mediapipe_status}  
-    **WebRTC:** ✅ Available
+    **Camera:** Ready to connect
     """)
     
-    # Camera troubleshooting
-    st.sidebar.subheader("Camera Issues?")
-    if st.sidebar.button("Troubleshooting Tips"):
-        st.sidebar.info("""
-        **If camera doesn't work:**
-        1. Allow camera permissions
-        2. Use Chrome browser
-        3. Check HTTPS connection
-        4. Refresh the page
-        5. Try different camera settings
-        """)
-    
-    # Main content tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📹 Live Monitoring", "📸 Image Analysis", "🔧 Troubleshooting", "ℹ️ Information"])
+    # Main tabs
+    tab1, tab2, tab3 = st.tabs(["📹 Live Monitoring", "📸 Image Analysis", "🛠️ Help"])
     
     with tab1:
         st.header("📹 Real-Time Driver Monitoring")
         
+        # Instructions
+        st.info("📌 **Instructions:** Click START below to begin monitoring. Allow camera permissions when prompted.")
+        
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.subheader("Video Feed")
+            st.subheader("Camera Feed")
             
-            # Camera test button
-            if st.button("🔍 Test Camera Access"):
-                st.info("Testing camera access... If this doesn't work, check the troubleshooting tab.")
-            
-            # WebRTC streamer with enhanced configuration
+            # Simplified WebRTC streamer - this should fix the start button
             try:
                 webrtc_ctx = webrtc_streamer(
-                    key="driver-monitoring-enhanced",
-                    video_processor_factory=lambda: EnhancedDetectionSystem(),
+                    key="driver-monitor",
+                    video_processor_factory=EnhancedDetectionSystem,
                     rtc_configuration=RTC_CONFIGURATION,
-                    media_stream_constraints={
-                        "video": {
-                            "width": {"min": 320, "ideal": 640, "max": 1280},
-                            "height": {"min": 240, "ideal": 480, "max": 720},
-                            "frameRate": {"min": 10, "ideal": 15, "max": 30},
-                            "facingMode": "user"  # Front-facing camera
-                        },
-                        "audio": False
-                    },
-                    async_processing=True,
-                    desired_playing_state=False,
-                    video_html_attrs={
-                        "style": {"width": "100%", "margin": "0 auto", "border": "2px solid #007bff"},
-                        "controls": False,
-                        "autoplay": True,
-                        "muted": True
-                    }
+                    media_stream_constraints={"video": True, "audio": False},
+                    async_processing=True
                 )
                 
-                # Display connection status
+                # Show connection status
                 if webrtc_ctx.state.playing:
-                    st.success("✅ Camera connected successfully!")
+                    st.success("✅ Camera is active and monitoring!")
                 elif webrtc_ctx.state.signalling:
                     st.info("🔄 Connecting to camera...")
                 else:
-                    st.warning("⚠️ Camera not connected. Click 'START' to begin monitoring.")
+                    st.warning("📹 Click START to begin monitoring")
                     
             except Exception as e:
-                st.error(f"WebRTC initialization error: {e}")
-                st.info("Try refreshing the page or check the troubleshooting tab.")
+                st.error(f"Camera error: {e}")
+                st.info("Try refreshing the page or check camera permissions")
         
         with col2:
-            st.subheader("📊 Live Metrics")
+            st.subheader("📊 Monitoring Status")
             
-            # Placeholder containers for real-time updates
-            ear_container = st.empty()
-            detection_container = st.empty()
-            alert_container = st.empty()
-            status_container = st.empty()
+            # Status containers
+            status_placeholder = st.empty()
+            metrics_placeholder = st.empty()
             
-            # Display default metrics when not running
-            if 'webrtc_ctx' not in locals() or not webrtc_ctx.state.playing:
-                with ear_container.container():
-                    st.markdown("""
-                    <div class="metric-card">
-                        <h4>👁️ Eye Status: Waiting...</h4>
-                        <p><strong>EAR Value:</strong> ---</p>
-                        <p><strong>Threshold:</strong> """ + str(ear_threshold) + """</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with detection_container.container():
-                    st.markdown("""
-                    <div class="metric-card">
-                        <h4>🔍 Detection Stats</h4>
-                        <p><strong>Faces:</strong> 0 | <strong>Eyes:</strong> 0</p>
-                        <p><strong>Hands:</strong> 0</p>
-                        <p><strong>Method:</strong> Waiting...</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with alert_container.container():
+            # Default status when not running
+            with status_placeholder.container():
+                if 'webrtc_ctx' not in locals() or not hasattr(webrtc_ctx, 'state') or not webrtc_ctx.state.playing:
                     st.markdown("""
                     <div class="warning-box">
-                        <h3>📹 Ready to Monitor</h3>
-                        <p>Click START to begin driver monitoring</p>
+                        <h3>📹 Ready to Start</h3>
+                        <p>Click START to begin monitoring</p>
+                        <p><strong>Current Status:</strong> Waiting...</p>
                     </div>
                     """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div class="success-box">
+                        <h3>✅ Monitoring Active</h3>
+                        <p>System is analyzing video feed</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with metrics_placeholder.container():
+                st.markdown("""
+                <div class="metric-card">
+                    <h4>Detection Metrics</h4>
+                    <p><strong>Eyes:</strong> Detecting...</p>
+                    <p><strong>Face:</strong> Detecting...</p>
+                    <p><strong>Hands:</strong> Detecting...</p>
+                    <p><strong>EAR Threshold:</strong> """ + str(ear_threshold) + """</p>
+                </div>
+                """, unsafe_allow_html=True)
     
     with tab2:
         st.header("📸 Static Image Analysis")
         
-        # File uploader with better error handling
+        st.markdown("""
+        Upload a photo to analyze driver state without using the camera.
+        """)
+        
         uploaded_file = st.file_uploader(
-            "Upload a driver image for analysis",
+            "Choose an image file",
             type=['jpg', 'jpeg', 'png', 'bmp'],
             help="Upload a clear photo showing the driver's face"
         )
@@ -900,263 +865,142 @@ def main():
                     processed_img, analysis_results = process_uploaded_image(uploaded_file)
                 
                 if processed_img is not None and analysis_results is not None:
-                    col1, col2 = st.columns([2, 1])
+                    col1, col2 = st.columns([3, 2])
                     
                     with col1:
-                        st.subheader("📊 Analysis Results")
-                        st.image(processed_img, caption="Processed Image with Detections", use_column_width=True)
+                        st.subheader("Analysis Results")
+                        st.image(processed_img, caption="Processed Image", use_column_width=True)
                     
                     with col2:
-                        st.subheader("📈 Detection Metrics")
+                        st.subheader("Detection Summary")
                         
-                        # Display results with better formatting
-                        faces = analysis_results.get("faces", 0)
-                        eyes = analysis_results.get("eyes", 0)
-                        hands = analysis_results.get("hands", 0)
-                        phone_conf = analysis_results.get("phone_confidence", 0.0)
+                        # Metrics
+                        st.metric("Faces Detected", analysis_results.get("faces", 0))
+                        st.metric("Eyes Detected", analysis_results.get("eyes", 0))
+                        st.metric("Hands Detected", analysis_results.get("hands", 0))
+                        st.metric("Average EAR", f"{analysis_results.get('avg_ear', 0.3):.3f}")
+                        st.metric("Phone Confidence", f"{analysis_results.get('phone_confidence', 0.0):.2f}")
+                        
+                        # Assessment
                         avg_ear = analysis_results.get("avg_ear", 0.3)
+                        phone_conf = analysis_results.get("phone_confidence", 0.0)
                         
-                        # Metrics display
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            st.metric("Faces", faces)
-                            st.metric("Eyes", eyes)
-                            st.metric("Hands", hands)
-                        with col_b:
-                            st.metric("Avg EAR", f"{avg_ear:.3f}")
-                            st.metric("Phone Confidence", f"{phone_conf:.2f}")
-                        
-                        # Status assessment
-                        st.subheader("🔍 Analysis Summary")
+                        st.subheader("Assessment")
                         
                         if avg_ear < 0.25:
-                            st.markdown("""
-                            <div class="danger-box">
-                                <strong>🚨 DROWSINESS DETECTED</strong><br>
-                                Eyes appear closed - driver may be drowsy
-                            </div>
-                            """, unsafe_allow_html=True)
+                            st.error("🚨 Eyes appear CLOSED - Possible drowsiness")
                         else:
-                            st.markdown("""
-                            <div class="success-box">
-                                <strong>✅ EYES OPEN</strong><br>
-                                Driver appears alert
-                            </div>
-                            """, unsafe_allow_html=True)
+                            st.success("✅ Eyes appear OPEN - Alert state")
                         
                         if phone_conf > 0.5:
-                            st.markdown("""
-                            <div class="danger-box">
-                                <strong>📱 PHONE USAGE DETECTED</strong><br>
-                                Possible phone handling detected
-                            </div>
-                            """, unsafe_allow_html=True)
+                            st.error("📱 Phone usage detected")
                         else:
-                            st.markdown("""
-                            <div class="success-box">
-                                <strong>✅ NO PHONE DETECTED</strong><br>
-                                No phone usage indicators
-                            </div>
-                            """, unsafe_allow_html=True)
+                            st.success("✅ No phone usage detected")
                         
                         # Detailed analysis
                         if analysis_results.get("analysis"):
-                            st.subheader("🔍 Detailed Analysis")
+                            st.subheader("Details")
                             for item in analysis_results["analysis"]:
-                                st.text(f"• {item}")
+                                st.write(f"• {item}")
                                 
             except Exception as e:
                 st.error(f"Error processing image: {e}")
-                st.info("Please try uploading a different image or check the file format.")
     
     with tab3:
-        st.header("🔧 Troubleshooting Camera Issues")
+        st.header("🛠️ Troubleshooting & Help")
+        
+        st.subheader("Camera Issues")
+        
+        with st.expander("START button not working", expanded=True):
+            st.markdown("""
+            **If the START button doesn't work:**
+            
+            1. **Check browser permissions:**
+               - Look for a camera icon in your browser's address bar
+               - Click it and select "Allow" for camera access
+               - Refresh the page after granting permissions
+            
+            2. **Try these browsers (in order of compatibility):**
+               - Chrome (recommended)
+               - Firefox
+               - Edge
+               - Avoid Safari (limited WebRTC support)
+            
+            3. **Other solutions:**
+               - Open in incognito/private window
+               - Clear browser cache and cookies
+               - Disable browser extensions temporarily
+               - Make sure no other apps are using the camera
+            """)
+        
+        with st.expander("Camera shows black screen"):
+            st.markdown("""
+            **If you see a black screen:**
+            
+            1. **Check camera hardware:**
+               - Ensure camera is not covered or disabled
+               - Try unplugging and reconnecting external cameras
+               - Check camera drivers are up to date
+            
+            2. **Check system permissions:**
+               - Make sure camera permissions are enabled for your browser
+               - Check Windows/Mac privacy settings for camera access
+            
+            3. **Test camera:**
+               - Try the camera in another app (like built-in camera app)
+               - Visit camera test websites to verify it works
+            """)
+        
+        with st.expander("Performance issues"):
+            st.markdown("""
+            **If the system is slow or laggy:**
+            
+            1. **Optimize performance:**
+               - Close other browser tabs
+               - Close other applications using camera
+               - Use a wired internet connection if possible
+               - Lower video quality in browser settings
+            
+            2. **System requirements:**
+               - Modern browser (updated within last year)
+               - Stable internet connection
+               - Camera with at least 480p resolution
+               - Adequate lighting for face detection
+            """)
+        
+        st.subheader("Detection Accuracy")
         
         st.markdown("""
-        ### Common Camera Problems and Solutions
+        **To improve detection accuracy:**
         
-        **Problem 1: "Camera not working" or black screen**
+        1. **Lighting:** Ensure good, even lighting on your face
+        2. **Position:** Sit directly facing the camera
+        3. **Distance:** Stay 2-4 feet from the camera
+        4. **Background:** Use a simple, uncluttered background
+        5. **Stability:** Keep your head relatively still
+        
+        **Detection thresholds can be adjusted in the sidebar settings.**
         """)
         
-        with st.expander("🔍 Browser Permissions", expanded=True):
-            st.markdown("""
-            **Steps to fix:**
-            1. Look for camera icon in your browser's address bar
-            2. Click on it and select "Allow" for camera access
-            3. Refresh this page after granting permissions
-            4. If no camera icon appears, check browser settings
-            
-            **Chrome:** Settings → Privacy and Security → Site Settings → Camera
-            **Firefox:** Settings → Privacy & Security → Permissions → Camera
-            **Edge:** Settings → Site Permissions → Camera
-            """)
-        
-        with st.expander("🌐 HTTPS and Browser Issues"):
-            st.markdown("""
-            **Requirements:**
-            - Must use HTTPS (your Streamlit Cloud app should automatically have this)
-            - Recommended browsers: Chrome, Firefox, Edge
-            - Avoid Safari (limited WebRTC support)
-            
-            **If still not working:**
-            1. Try opening in an incognito/private window
-            2. Clear browser cache and cookies
-            3. Disable browser extensions temporarily
-            4. Check if camera works on other websites (like meet.google.com)
-            """)
-        
-        with st.expander("💻 System and Hardware Issues"):
-            st.markdown("""
-            **Check these:**
-            1. Camera is not being used by other applications (Zoom, Teams, etc.)
-            2. Camera drivers are up to date
-            3. Try unplugging and reconnecting external cameras
-            4. For laptops, check if camera is physically blocked/disabled
-            5. Restart your browser completely
-            """)
-        
-        with st.expander("🔬 Technical Debugging"):
-            st.markdown("""
-            **For advanced users:**
-            1. Open browser Developer Tools (F12)
-            2. Go to Console tab
-            3. Look for WebRTC or camera-related errors
-            4. Check if `navigator.mediaDevices` is available
-            5. Test with: `navigator.mediaDevices.getUserMedia({video: true})`
-            """)
-        
-        st.markdown("### Quick Camera Test")
+        st.subheader("System Information")
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🔍 Test Basic Camera Access"):
-                st.info("Click START on the main tab to test camera access.")
-        
-        with col2:
-            if st.button("📋 Show System Info"):
-                st.code(f"""
-System Information:
-- OpenCV: {'Available' if cv2 is not None else 'Not Available'}
-- MediaPipe: {'Available' if MEDIAPIPE_AVAILABLE else 'Not Available'}
-- Streamlit: {st.__version__}
-                """)
-        
-        st.markdown("### Alternative Solutions")
-        
-        st.info("""
-        **If camera still doesn't work:**
-        1. Use the "Image Analysis" tab to upload photos instead
-        2. Try using a different device or browser
-        3. Check if your organization has camera usage restrictions
-        4. Consider using a local development environment
-        """)
-    
-    with tab4:
-        st.header("ℹ️ System Information & Usage Guide")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("🎯 Detection Features")
-            st.markdown("""
-            **Drowsiness Detection:**
-            - Eye Aspect Ratio (EAR) monitoring
-            - Blink pattern analysis
-            - Multiple detection algorithms
-            - Real-time alerting system
-            
-            **Phone Usage Detection:**
-            - Hand gesture recognition
-            - Phone holding patterns
-            - Grip analysis
-            - Multi-indicator scoring
-            
-            **Face Detection:**
-            - MediaPipe AI models
-            - OpenCV Haar cascades
-            - Multi-angle face detection
-            - Confidence scoring
+            st.code(f"""
+OpenCV: {'Available' if cv2 is not None else 'Not Available'}
+MediaPipe: {'Available' if MEDIAPIPE_AVAILABLE else 'Not Available'}
+Streamlit: {st.__version__}
             """)
         
         with col2:
-            st.subheader("⚡ Technical Specifications")
             st.markdown("""
-            **Algorithms:**
-            - MediaPipe Face Detection/Mesh
-            - MediaPipe Hands
-            - OpenCV Computer Vision
-            - Advanced image processing
-            
-            **Performance:**
-            - Real-time processing (15-30 FPS)
-            - Adaptive thresholding
-            - Error recovery systems
-            - Multi-browser support
-            
-            **Supported Formats:**
-            - Live webcam feed
-            - JPG, PNG, BMP images
-            - HD video processing
+            **Key Features:**
+            - Real-time drowsiness detection
+            - Phone usage monitoring  
+            - Face and eye tracking
+            - Configurable alert thresholds
+            - Image analysis mode
             """)
-        
-        st.subheader("📋 How to Use This System")
-        
-        with st.expander("🚗 For Driver Monitoring"):
-            st.markdown("""
-            **Setup:**
-            1. Position camera at eye level
-            2. Ensure good lighting
-            3. Minimize background distractions
-            4. Test camera access first
-            
-            **During Monitoring:**
-            - Keep face visible to camera
-            - Watch for drowsiness alerts
-            - Monitor phone usage warnings
-            - Adjust sensitivity settings as needed
-            
-            **Best Practices:**
-            - Use in well-lit environments
-            - Keep camera lens clean
-            - Check system regularly
-            - Take breaks as recommended
-            """)
-        
-        with st.expander("📸 For Image Analysis"):
-            st.markdown("""
-            **Image Requirements:**
-            - Clear, well-lit photos
-            - Face clearly visible
-            - Minimal motion blur
-            - JPG, PNG, or BMP format
-            
-            **Analysis Features:**
-            - Automatic face detection
-            - Eye state analysis
-            - Hand/phone detection
-            - Detailed metrics report
-            """)
-        
-        st.subheader("⚙️ System Requirements")
-        
-        requirements_info = {
-            "Browser": "Chrome (recommended), Firefox, Edge",
-            "Camera": "Any webcam with 640x480 or higher resolution",
-            "Internet": "Stable connection for real-time processing",
-            "Lighting": "Good ambient lighting for accurate detection",
-            "Python Libraries": "OpenCV, MediaPipe, Streamlit-WebRTC"
-        }
-        
-        for requirement, details in requirements_info.items():
-            st.text(f"• {requirement}: {details}")
-        
-        st.subheader("⚠️ Important Notes")
-        st.warning("""
-        This system is designed for educational and research purposes. 
-        For production use in vehicles, additional safety measures and 
-        redundant systems should be implemented. Always prioritize 
-        actual driver training and safe driving practices.
-        """)
 
 
 if __name__ == "__main__":
